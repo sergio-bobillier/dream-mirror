@@ -2,7 +2,9 @@ mod db;
 
 use colored::Colorize;
 use db::DB;
+use std::path::PathBuf;
 use tauri::AppHandle;
+use thiserror::Error;
 
 enum Severity {
     Debug,
@@ -10,6 +12,12 @@ enum Severity {
     Warning,
     Error,
     Fatal
+}
+
+#[derive(Error, Debug)]
+enum Error {
+    #[error("Database error: {0}")]
+    Database(#[from] db::Error)
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -35,8 +43,8 @@ fn banner() {
 fn print_message(message: String, severity: Severity) -> () {
     let severity_text = match severity {
         Severity::Debug => "DEBUG:".green(),
-        Severity::Info => "INFO:".blue(),
-        Severity::Warning => "WARNING:".yellow(),
+        Severity::Info => "INFO: ".blue(),
+        Severity::Warning => "WARN: ".yellow(),
         Severity::Error => "ERROR:".red(),
         Severity::Fatal => "FATAL:".purple()
     };
@@ -44,31 +52,55 @@ fn print_message(message: String, severity: Severity) -> () {
     println!("{} {}", severity_text, message);
 }
 
-fn db_exists() -> Result<bool, db::Error> {
+fn check_db_exists() -> Result<(PathBuf, bool), db::Error> {
     let db_path = DB::path()?;
 
     print_message(
         format!("Checking path: {}...", db_path.display()),
         Severity::Debug
     );
-    DB::exists()
+
+    Ok((db_path, DB::exists()?))
 }
 
-fn prep_database() {
+fn create_db() -> Result<DB, Error> {
+    match DB::new() {
+        Ok(db) => Ok(db),
+        Err(error) => {
+            print_message(
+                format!("Error creating database: {}", error),
+                Severity::Fatal
+            );
+            Err(Error::Database(error))
+        }
+    }
+}
+
+fn prep_database() -> Result<(), Error> {
     print_message("Looking for an existing database file...".to_string(), Severity::Debug);
 
-    match db_exists() {
-        Ok(true) => {
-            print_message("Database file already exists.".to_string(), Severity::Info)
-        },
-        Ok(false) => {
-            print_message("No database file found. Creating a new one.".to_string(), Severity::Info);
+    match check_db_exists() {
+        Ok((path, exists)) => {
+            if exists {
+                print_message("Database file already exists.".to_string(), Severity::Info);
+                Ok(())
+            } else {
+                print_message("No database file found.".to_string(), Severity::Info);
+                print_message("Creating a new database...".to_string(), Severity::Info);
+                print_message(format!("Loading schema to: {}...", path.display()), Severity::Debug);
+
+                create_db()?;
+
+                print_message("Database created successfully.".to_string(), Severity::Info);
+                Ok(())
+            }
         },
         Err(error) => {
             print_message(
                 format!("Error checking for database file: {}", error),
                 Severity::Fatal
-            )
+            );
+            Err(Error::Database(error))
         }
     }
 }
@@ -77,11 +109,19 @@ fn prep_database() {
 pub fn run() {
     banner();
 
-    prep_database();
+    match prep_database() {
+        Ok(_) => {
+            print_message("Database is ready.".to_string(), Severity::Debug);
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![exit_app])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            tauri::Builder::default()
+                .plugin(tauri_plugin_opener::init())
+                .invoke_handler(tauri::generate_handler![exit_app])
+                .run(tauri::generate_context!())
+                .expect("error while running tauri application");
+        },
+        Err(error) => print_message(
+            format!("Database initialization failed!\n\t{}", error),
+            Severity::Fatal
+        )
+    }
 }
