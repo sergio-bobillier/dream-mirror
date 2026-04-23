@@ -8,10 +8,10 @@
     <script src="/assets/js/tabler.min.js" defer></script>
     <script type="module" src="/main.js" defer></script>
   </head>
-  <body>
+  <body class="layout-fluid">
     <div class="page">
-      <header class="navbar-expand-md">
-        <div class="collapse navbar-collapse" id="navbar-menu">
+      <div class="sticky-top">
+        <header class="navbar-expand-md">
           <div class="navbar">
             <div class="container-xl">
               <div class="row flex-column flex-md-row flex-fill align-items-center">
@@ -62,8 +62,10 @@
               </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      </div>
+      <div class="page-wrapper" id="page-wrapper">
+      </div>
     </div>
   </body>
 </html>
