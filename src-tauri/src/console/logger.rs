@@ -33,4 +33,8 @@ impl<T: Write> Logger<T> {
             let _ = self.writer.flush();
         }
     }
+
+    pub fn debug(&mut self, message: &str) -> () {
+        self.log_message(message.to_string(), Severity::Debug);
+    }
 }

@@ -1,15 +1,23 @@
 use dirs::home_dir;
 use std::path::PathBuf;
+use sqlite::Statement;
 use thiserror::Error;
+
+pub mod objects;
+pub mod schema;
+pub mod seeder;
+pub use seeder::seed;
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Cannot locate the user's home directory.")]
     NoHomeDirectory,
+    #[error("Database already exists")]
+    DatabaseAlreadyExists,
     #[error("Cannot open the database file {0}: {1}")]
-    CannotOpenDatabase(PathBuf, #[source] sqlite::Error),
-    #[error("Cannot load the database schema: {0}")]
-    SchemaLoadError(#[from] sqlite::Error)
+    ConnectionFailed(PathBuf, #[source] sqlite::Error),
+    #[error("Failed to prepare statement from query: '{0}': {1}")]
+    PrepareFailed(String, #[source] sqlite::Error),
 }
 
 pub struct DB {
@@ -35,19 +43,34 @@ impl DB {
 
     pub fn new() -> Result<Self, Error> {
         let path = Self::path()?;
+
+        if path.exists() {
+            return Err(Error::DatabaseAlreadyExists);
+        }
+
+        Self::connect(path)
+    }
+
+    pub fn open() -> Result<Self, Error> {
+        let path = Self::path()?;
+        Self::connect(path)
+    }
+
+    pub fn query(&self, query: &str) -> Result<Statement, Error> {
+        match self.connection.prepare(query) {
+            Ok(statement) => Ok(statement),
+            Err(error) => Err(Error::PrepareFailed(query.to_string(), error))
+        }
+    }
+
+    fn connect(path: PathBuf) -> Result<Self, Error> {
         let result = sqlite::open(&path);
 
         match result {
             Ok(connection) => {
-                let db = Self { connection };
-                db.load_schema()?;
-                Ok(db)
+                Ok(Self { connection })
             },
-            Err(error) => Err(Error::CannotOpenDatabase(path, error))
+            Err(error) => Err(Error::ConnectionFailed(path, error))
         }
-    }
-
-    fn load_schema(&self) -> Result<(), Error> {
-        Ok(())
     }
 }
