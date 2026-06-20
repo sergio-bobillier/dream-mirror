@@ -1,18 +1,14 @@
-mod db;
-
-use colored::Colorize;
-use db::DB;
+use std::io::stdout;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use thiserror::Error;
 
-enum Severity {
-    Debug,
-    Info,
-    Warning,
-    Error,
-    Fatal
-}
+mod console;
+mod db;
+
+use console::Logger;
+use console::Severity;
+use db::DB;
 
 #[derive(Error, Debug)]
 enum Error {
@@ -40,22 +36,11 @@ fn banner() {
     );
 }
 
-fn print_message(message: String, severity: Severity) -> () {
-    let severity_text = match severity {
-        Severity::Debug => "DEBUG:".green(),
-        Severity::Info => "INFO: ".blue(),
-        Severity::Warning => "WARN: ".yellow(),
-        Severity::Error => "ERROR:".red(),
-        Severity::Fatal => "FATAL:".purple()
-    };
-
-    println!("{} {}", severity_text, message);
-}
-
 fn check_db_exists() -> Result<(PathBuf, bool), db::Error> {
     let db_path = DB::path()?;
+    let mut logger = Logger::new(stdout());
 
-    print_message(
+    logger.log_message(
         format!("Checking path: {}...", db_path.display()),
         Severity::Debug
     );
@@ -64,10 +49,12 @@ fn check_db_exists() -> Result<(PathBuf, bool), db::Error> {
 }
 
 fn create_db() -> Result<DB, Error> {
+    let mut logger = Logger::new(stdout());
+
     match DB::new() {
         Ok(db) => Ok(db),
         Err(error) => {
-            print_message(
+            logger.log_message(
                 format!("Error creating database: {}", error),
                 Severity::Fatal
             );
@@ -77,26 +64,28 @@ fn create_db() -> Result<DB, Error> {
 }
 
 fn prep_database() -> Result<(), Error> {
-    print_message("Looking for an existing database file...".to_string(), Severity::Debug);
+    let mut logger = Logger::new(stdout());
+
+    logger.log_message("Looking for an existing database file...".to_string(), Severity::Debug);
 
     match check_db_exists() {
         Ok((path, exists)) => {
             if exists {
-                print_message("Database file already exists.".to_string(), Severity::Info);
+                logger.log_message("Database file already exists.".to_string(), Severity::Info);
                 Ok(())
             } else {
-                print_message("No database file found.".to_string(), Severity::Info);
-                print_message("Creating a new database...".to_string(), Severity::Info);
-                print_message(format!("Loading schema to: {}...", path.display()), Severity::Debug);
+                logger.log_message("No database file found.".to_string(), Severity::Info);
+                logger.log_message("Creating a new database...".to_string(), Severity::Info);
+                logger.log_message(format!("Loading schema to: {}...", path.display()), Severity::Debug);
 
                 create_db()?;
 
-                print_message("Database created successfully.".to_string(), Severity::Info);
+                logger.log_message("Database created successfully.".to_string(), Severity::Info);
                 Ok(())
             }
         },
         Err(error) => {
-            print_message(
+            logger.log_message(
                 format!("Error checking for database file: {}", error),
                 Severity::Fatal
             );
@@ -107,11 +96,15 @@ fn prep_database() -> Result<(), Error> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut logger = Logger::new(stdout());
+
+    logger.log_message("Hello".to_string(), Severity::Info);
+
     banner();
 
     match prep_database() {
         Ok(_) => {
-            print_message("Database is ready.".to_string(), Severity::Debug);
+            logger.log_message("Database is ready.".to_string(), Severity::Debug);
 
             tauri::Builder::default()
                 .plugin(tauri_plugin_opener::init())
@@ -119,7 +112,7 @@ pub fn run() {
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
         },
-        Err(error) => print_message(
+        Err(error) => logger.log_message(
             format!("Database initialization failed!\n\t{}", error),
             Severity::Fatal
         )
